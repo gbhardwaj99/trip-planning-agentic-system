@@ -2,7 +2,9 @@ langchain
 langchain-openai
 langchain-community
 langchain-classic
+
 langgraph
+langgraph-checkpoint-redis
 
 uvicorn
 fastapi
@@ -14,4 +16,7 @@ fastmcp
 
 faiss-cpu
 dotenv
+
 streamlit
+streamlit-autorefresh
+websocket-client
