@@ -6,6 +6,7 @@ langgraph
 
 uvicorn
 fastapi
+websockets
 starlette
 pydantic
 
@@ -13,3 +14,4 @@ fastmcp
 
 faiss-cpu
 dotenv
+streamlit

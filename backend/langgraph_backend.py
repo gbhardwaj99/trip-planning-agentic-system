@@ -1,5 +1,4 @@
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import MessagesState
 from langgraph.checkpoint.memory import InMemorySaver
@@ -22,8 +21,6 @@ def chat_node(state:MessagesState):
 builder = StateGraph(MessagesState)
 
 checkpointer = InMemorySaver()
-
-config = {'configurable': {'thread_id': 'thread-1'}}
 
 builder.add_node('chat_node', chat_node)
 
