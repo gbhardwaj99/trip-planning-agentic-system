@@ -18,6 +18,12 @@ async def get_cookie_or_token(
 def welcome_page():
     return {"message": "Trip Planning Workflow Api Endpoint"}
 
+@app.get("/history/{thread_id}")
+def get_chat_history(thread_id):
+    config = {"configurable": {"thread_id": thread_id}}
+    state = chatbot.get_state(config=config)
+    return state.values.get("messages", [])
+
 @app.websocket("/ws/chat/{thread_id}")
 async def websocket_endpoint(
     websocket: WebSocket,

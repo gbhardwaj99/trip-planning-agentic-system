@@ -1,7 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import MessagesState
-from langgraph.checkpoint.redis import RedisSaver
+from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import BaseModel
 from typing import TypedDict
 from dotenv import load_dotenv
@@ -18,18 +18,15 @@ def chat_node(state:MessagesState):
 
     return {'messages': [response]}
 
-REDIS_URI = "redis://localhost:6379"
 
-with RedisSaver.from_conn_string(REDIS_URI) as checkpointer:
-    #only required once
-    checkpointer.setup()
+builder = StateGraph(MessagesState)
 
-    builder = StateGraph(MessagesState)
+builder.add_node('chat_node', chat_node)
 
-    builder.add_node('chat_node', chat_node)
+builder.add_edge(START, 'chat_node')
+builder.add_edge('chat_node', END)
 
-    builder.add_edge(START, 'chat_node')
-    builder.add_edge('chat_node', END)
+checkpointer = InMemorySaver()
 
-    chatbot = builder.compile(checkpointer=checkpointer)
+chatbot = builder.compile(checkpointer=checkpointer)
 
