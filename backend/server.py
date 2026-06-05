@@ -1,10 +1,37 @@
 from fastapi import FastAPI, HTTPException, WebSocket, Depends, Cookie, Query, WebSocketException, status, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from langgraph_backend import chatbot
+from langgraph_backend import builder_graph
+from database.thread_db import ChatDatabase
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.redis import AsyncRedisSaver
 from typing import Annotated
+from contextlib import asynccontextmanager
+from pydantic import BaseModel
 
-app = FastAPI()
+class ThreadRequest(BaseModel):
+    thread_id: str
+
+REDIS_URI = "redis://localhost:6379"
+
+@asynccontextmanager
+async def lifespan(app:FastAPI):
+    checkpointer_cm = AsyncRedisSaver.from_conn_string(REDIS_URI)
+
+    checkpointer = await checkpointer_cm.__aenter__()
+
+    await checkpointer.setup()
+
+    app.state.chatbot = await builder_graph(checkpointer=checkpointer)
+
+    db = ChatDatabase()
+
+    app.state.db = db
+
+    yield
+
+    await checkpointer_cm.__aexit__(None, None, None)
+
+app = FastAPI(lifespan=lifespan)
 
 async def get_cookie_or_token(
     websocket: WebSocket,
@@ -22,8 +49,25 @@ def welcome_page():
 @app.get("/history/{thread_id}")
 def get_chat_history(thread_id):
     config = {"configurable": {"thread_id": thread_id}}
-    state = chatbot.get_state(config=config)
+    state = app.state.chatbot.get_state(config=config)
     return state.values.get("messages", [])
+
+@app.get("/threadhistory")
+def get_thread_history():
+    try:
+        threads = app.state.db.get_threads()
+        return {"threads": threads}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/thread")
+def save_thread(payload: ThreadRequest):
+    try:
+        app.state.db.save_thread(payload.thread_id)
+        return {"message": "thread added successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @app.websocket("/ws/chat/{thread_id}")
 async def websocket_endpoint(
@@ -38,7 +82,7 @@ async def websocket_endpoint(
         while True:
             user_input = await websocket.receive_text()
             
-            async for event in chatbot.astream_events(
+            async for event in app.state.chatbot.astream_events(
                 {"messages": [HumanMessage(content=user_input)]},
                 config={"configurable":{"thread_id":thread_id}},
                 version="v2"

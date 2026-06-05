@@ -11,37 +11,41 @@ load_dotenv()
 
 llm = ChatOpenAI()
 
-def chat_node(state:MessagesState):
-    """Invokes LLM to get a response based on user input"""
-
-    messages = state['messages']
-    response = llm.invoke(messages)
-
-    return {'messages': [response]}
-
-def search_node(state:MessagesState):
-    """Dummy search node to send server events for searching"""
-    time.sleep(2)
-    return {}
-
-def call_tools(state:MessagesState):
-    """Dummy tool node to send server events for tool calls"""
-    time.sleep(2)
-    return {}
 
 
-builder = StateGraph(MessagesState)
+async def builder_graph(checkpointer):
 
-builder.add_node('chat_node', chat_node)
-builder.add_node('search_node', search_node)
-builder.add_node('call_tools', call_tools)
+    def chat_node(state:MessagesState):
+        """Invokes LLM to get a response based on user input"""
 
-builder.add_edge(START, 'search_node')
-builder.add_edge('search_node', 'call_tools')
-builder.add_edge('call_tools', 'chat_node')
-builder.add_edge('chat_node', END)
+        messages = state['messages']
+        response = llm.invoke(messages)
 
-checkpointer = InMemorySaver()
+        return {'messages': [response]}
 
-chatbot = builder.compile(checkpointer=checkpointer)
+    def search_node(state:MessagesState):
+        """Dummy search node to send server events for searching"""
+        time.sleep(2)
+        return {}
+
+    def call_tools(state:MessagesState):
+        """Dummy tool node to send server events for tool calls"""
+        time.sleep(2)
+        return {}
+
+
+    builder = StateGraph(MessagesState)
+
+    builder.add_node('chat_node', chat_node)
+    builder.add_node('search_node', search_node)
+    builder.add_node('call_tools', call_tools)
+
+    builder.add_edge(START, 'search_node')
+    builder.add_edge('search_node', 'call_tools')
+    builder.add_edge('call_tools', 'chat_node')
+    builder.add_edge('chat_node', END)
+
+    chatbot = builder.compile(checkpointer=checkpointer)
+
+    return chatbot
 

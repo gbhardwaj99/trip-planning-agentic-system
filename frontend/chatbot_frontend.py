@@ -13,6 +13,8 @@ import json
 
 # st_autorefresh(interval=500, key="websocket_ui_cleaner")
 
+API_URL = "http://127.0.0.1:8000"
+
 st.set_page_config(layout="wide", page_title="Streamlit Websocket Client")
 st.title("Trip planning chatbot")
 
@@ -21,17 +23,34 @@ st.title("Trip planning chatbot")
 #---------------------------------------------------------#
 
 def generate_thread():
-    new_thread_id = uuid.uuid4()
-    return new_thread_id
+    return str(uuid.uuid4())
+
+def normalize_thread_id(thread_id):
+    return str(thread_id)
 
 def get_chat(thread_id):
-    response = requests.get(f"http://127.0.0.1:8000/history/{thread_id}")
+    response = requests.get(f"{API_URL}/history/{thread_id}")
     result = response.json()
     return [{"role": message["type"], "content": message["content"]} for message in result]
 
 def add_thread(thread_id):
+    thread_id = normalize_thread_id(thread_id)
+    response = requests.post(
+        f"{API_URL}/thread",
+        json={"thread_id": thread_id}
+    )
     if thread_id not in st.session_state.chat_threads:
         st.session_state.chat_threads.append(thread_id)
+
+def get_chat_threads():
+    response = requests.get(f"{API_URL}/threadhistory")
+    result = response.json()
+    threads = result.get("threads", [])
+
+    if threads:
+        return [normalize_thread_id(thread[0]) for thread in threads]
+    
+    return []
 
 #---------------------------------------------------------#
 #                   SESSION MANAGEMENT                   
@@ -46,11 +65,11 @@ if "in_queue" not in st.session_state:
     st.session_state.in_queue = queue.Queue()
 
 if "chat_threads" not in st.session_state:
-    st.session_state.chat_threads = []
+    st.session_state.chat_threads = get_chat_threads()
 
 if "current_thread" not in st.session_state:
     if "thread_id" in params:
-        st.session_state.current_thread = params["thread_id"]
+        st.session_state.current_thread = normalize_thread_id(params["thread_id"])
     else:
         new_thread_id = generate_thread()
         params["thread_id"] = new_thread_id
@@ -60,10 +79,8 @@ if "current_thread" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
     for message in get_chat(st.session_state.current_thread):
-        st.session_state.chat_history.append({
-            "role": "user" if message["type"] == "human" else "ai",
-            "content": message["content"]
-        })
+        if message:
+            st.session_state.chat_history.append(message)
 
 
 def queue_stream():
@@ -169,7 +186,7 @@ with st.sidebar:
     st.header("My Conversations")
 
     for thread in st.session_state.chat_threads:
-        if st.button(str(thread)):
+        if st.button(str(thread), key=f"thread_{thread}"):
             params["thread_id"] = thread
             st.session_state.current_thread = thread
             start_new_ws_thread(st.session_state.current_thread)
