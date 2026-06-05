@@ -9,6 +9,7 @@ import threading
 import queue
 import requests
 import uuid
+import json
 
 # st_autorefresh(interval=500, key="websocket_ui_cleaner")
 
@@ -64,7 +65,7 @@ def queue_stream():
     while True:
         token = st.session_state.in_queue.get()
 
-        if token == "__END__":
+        if token["type"] == "terminate":
             break
 
         yield token
@@ -88,7 +89,7 @@ async def websocket_worker(uri, out_queue, in_queue):
             try:
                 # set a short timeout so the loop stays responsive to outbound queue
                 response = await asyncio.wait_for(websocket.recv(), timeout=0.1)
-                in_queue.put(response)
+                in_queue.put(json.loads(response))
                 
             except asyncio.TimeoutError:
                 pass
@@ -146,12 +147,27 @@ if user_input:
     st.session_state.out_queue.put(user_input)
     st.toast("Message queued for sending!")
 
-    with st.chat_message("ai"):
-        ai_message = st.write_stream(queue_stream())
+    status_placeholder = st.empty()
+    ai_response = ""
+
+    with status_placeholder.container():
+        status_box = st.status("Initializing agent workflow...", expanded=True)
+        ai_message = st.chat_message("ai")
+        token_placeholder = ai_message.empty()
+
+        for token in queue_stream():
+            if token["type"] == "status":
+                status_box.update(label=token["content"], state="running")
+
+            elif token["type"] == "token":
+                ai_response += token["content"]
+                token_placeholder.markdown(ai_response)
+
+        status_box.update(label="Complete", state="complete")
 
     st.session_state.chat_history.append({
         "role": "ai",
-        "content": ai_message
+        "content": ai_response
     })
 
     st.rerun()
