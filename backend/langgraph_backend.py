@@ -21,12 +21,12 @@ def chat_node(state:MessagesState):
 
 def search_node(state:MessagesState):
     """Dummy search node to send server events for searching"""
-    time.sleep(5)
+    time.sleep(2)
     return {}
 
 def call_tools(state:MessagesState):
     """Dummy tool node to send server events for tool calls"""
-    time.sleep(5)
+    time.sleep(2)
     return {}
 
 

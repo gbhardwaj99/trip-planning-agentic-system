@@ -20,9 +20,14 @@ st.title("Trip planning chatbot")
 #                   UTILITY FUNCTIONS                   
 #---------------------------------------------------------#
 
+def generate_thread():
+    new_thread_id = uuid.uuid4()
+    return new_thread_id
+
 def get_chat(thread_id):
     response = requests.get(f"http://127.0.0.1:8000/history/{thread_id}")
-    return response.json()
+    result = response.json()
+    return [{"role": message["type"], "content": message["content"]} for message in result]
 
 def add_thread(thread_id):
     if thread_id not in st.session_state.chat_threads:
@@ -47,7 +52,7 @@ if "current_thread" not in st.session_state:
     if "thread_id" in params:
         st.session_state.current_thread = params["thread_id"]
     else:
-        new_thread_id = uuid.uuid4()
+        new_thread_id = generate_thread()
         params["thread_id"] = new_thread_id
         st.session_state.current_thread = new_thread_id
     add_thread(st.session_state.current_thread)
@@ -81,7 +86,14 @@ async def websocket_worker(uri, out_queue, in_queue):
             #Check for outbound messages to send
             try:
                 msg_to_send = out_queue.get_nowait()
-                await websocket.send(msg_to_send)
+                if msg_to_send == "WS_STOP":
+                    try:
+                        await websocket.close()
+                    except Exception:
+                        pass
+                    break
+                else:
+                    await websocket.send(msg_to_send)
             except queue.Empty:
                 pass
 
@@ -105,10 +117,26 @@ def start_websocket_thread(thread_id, oq, iq):
         websocket_worker(f"ws://localhost:8000/ws/chat/{thread_id}", oq, iq)
     )
 
-if "ws_thread" not in st.session_state:
+def start_new_ws_thread(thread_id):
+    # Signal existing worker (if any) to stop and wait briefly
+    if "ws_thread" in st.session_state and st.session_state.ws_thread is not None:
+        try:
+            st.session_state.out_queue.put("WS_STOP")
+        except Exception:
+            pass
+
+        try:
+            st.session_state.ws_thread.join(timeout=2)
+        except Exception:
+            pass
+
+    # create fresh per-connection queues
+    st.session_state.out_queue = queue.Queue(maxsize=2000)
+    st.session_state.in_queue = queue.Queue()
+
     thread = threading.Thread(
         target=start_websocket_thread,
-        args=(st.session_state.current_thread, st.session_state.out_queue, st.session_state.in_queue),
+        args=(thread_id, st.session_state.out_queue, st.session_state.in_queue),
         daemon=True
     )
 
@@ -118,25 +146,43 @@ if "ws_thread" not in st.session_state:
     st.session_state.ws_thread = thread
     st.session_state.ws_thread.start()
 
+
+if "ws_thread" not in st.session_state:
+    start_new_ws_thread(st.session_state.current_thread)
+
 #---------------------------------------------------------#
 #                   MAIN UI                     
 #---------------------------------------------------------#
 
 with st.sidebar:
     
-    if st.button("Connect"):
-        st.write("Client connected!")
+    if st.button("New Chat"):
+        new_thread_id = generate_thread()
+        st.session_state.current_thread = new_thread_id
+        start_new_ws_thread(st.session_state.current_thread)
+        
+        st.session_state.chat_history = []
+        params["thread_id"] = new_thread_id
+        add_thread(new_thread_id)
+        st.rerun()
+        
+    st.header("My Conversations")
 
     for thread in st.session_state.chat_threads:
         if st.button(str(thread)):
+            params["thread_id"] = thread
             st.session_state.current_thread = thread
+            start_new_ws_thread(st.session_state.current_thread)
+
             st.session_state.chat_history = get_chat(thread)
+            st.rerun()
 
 user_input = st.chat_input("Your message!")
 
-for message in st.session_state.chat_history:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
+if st.session_state.chat_history:
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
 
 if user_input:
     with st.chat_message("user"):
