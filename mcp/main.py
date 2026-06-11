@@ -7,6 +7,7 @@ import aiosqlite
 TEMP_DIR = tempfile.gettempdir()
 HOTELS_DB_PATH = os.path.join(TEMP_DIR, "hotels.db")
 FLIGHTS_DB_PATH = os.path.join(TEMP_DIR, "flights.db")
+CABS_DB_PATH = os.path.join(TEMP_DIR, "cabs.db")
 
 mcp = FastMCP()
 
@@ -24,7 +25,36 @@ def init_db():
             """)
             c.execute("INSERT OR IGNORE INTO hotels(name, city, review) VALUES ('Taj Hotel', 'test', 4)")
             c.execute("DELETE FROM hotels where city = 'test'")
-            print("Database initialized successfully")
+            print("Hotel Database initialized successfully")
+
+        with sqlite3.connect(FLIGHTS_DB_PATH) as c:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS flights(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company STR NOT NULL,
+                    source STR NOT NULL,
+                    destination STR NOT NULL,
+                    start STR NOT NULL,
+                    end STR NOT NULL
+                )
+            """)
+            c.execute("INSERT OR IGNORE INTO flights(company, source, destination, start, end) VALUES ('test', 'Ahmedabad', 'Mumbai', '11:45pm', '12:50am')")
+            c.execute("DELETE FROM flights where company = 'test'")
+            print("Flight Database initialized successfully")
+
+        with sqlite3.connect(CABS_DB_PATH) as c:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS cabs(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company STR NOT NULL,
+                    city STR NOT NULL,
+                    driver STR NOT NULL,
+                    price STR NOT NULL
+                )
+            """)
+            c.execute("INSERT OR IGNORE INTO cabs(company, city, driver, price) VALUES ('test', 'Mumbai', 'Raju Bhai', '100 rs per km')")
+            c.execute("DELETE FROM cabs where company = 'test'")
+            print("Cabs Database initialized successfully")
         
     except Exception as e:
         print(f"Database initialization error: {e}")
@@ -43,6 +73,38 @@ async def add_hotels(name: str, city: str, review: int):
             )
             await c.commit()
             return {"status": "ok", "id": curr.lastrowid, "message": "Hotel added successfully"}
+        
+    except Exception as e:
+        if "readonly" in str(e).lower():
+            return {"status": "error", "message": f"Database error: {str(e)}"}
+
+@mcp.tool
+async def add_flights(company:str, source:str, destination:str, start:str, end:str):
+    """Tool to add a flight with a given company, source, destination, start and end times"""
+    try:
+        async with aiosqlite.connect(FLIGHTS_DB_PATH) as c:
+            curr = await c.execute(
+                "INSERT INTO flights(company, source, destination, start, end) VALUES (?, ?, ?, ?, ?)",
+                (company, source, destination, start, end)
+            )
+            await c.commit()
+            return {"status": "ok", "id": curr.lastrowid, "message": "Flight added successfully"}
+        
+    except Exception as e:
+        if "readonly" in str(e).lower():
+            return {"status": "error", "message": f"Database error: {str(e)}"}
+        
+@mcp.tool
+async def add_cabs(company:str, city:str, driver:str, price:str):
+    """Tool to add a cab with a given company, city, driver and price"""
+    try:
+        async with aiosqlite.connect(CABS_DB_PATH) as c:
+            curr = await c.execute(
+                "INSERT INTO cabs(company, city, driver, price) VALUES (?, ?, ?, ?)",
+                (company, city, driver, price)
+            )
+            await c.commit()
+            return {"status": "ok", "id": curr.lastrowid, "message": "Cab added successfully"}
         
     except Exception as e:
         if "readonly" in str(e).lower():
@@ -67,6 +129,44 @@ async def list_hotels(city: str):
         
     except Exception as e:
         return {"status": "error", "message": f"Error listing hotels: {str(e)}"}
+
+@mcp.tool
+async def list_flights(source: str, destination: str):
+    """List all flights for the given source and destination"""
+    try:
+        async with aiosqlite.connect(FLIGHTS_DB_PATH) as c:
+            curr = await c.execute(
+                """
+                SELECT company, source, destination, start, end
+                FROM flights
+                WHERE source = ? AND destination = ?
+                """,
+                (source, destination)
+            )
+            cols = [d[0] for d in curr.description]
+            return [dict(zip(cols,r)) for r in await curr.fetchall()]
+        
+    except Exception as e:
+        return {"status": "error", "message": f"Error listing flights: {str(e)}"}
+    
+@mcp.tool
+async def list_cabs(city: str):
+    """List all the cabs for given city"""
+    try:
+        async with aiosqlite.connect(CABS_DB_PATH) as c:
+            curr = await c.execute(
+                """
+                SELECT company, city, driver, price
+                FROM cabs
+                WHERE city = ?
+                """,
+                (city,)
+            )
+            cols = [d[0] for d in curr.description]
+            return [dict(zip(cols,r)) for r in await curr.fetchall()]
+        
+    except Exception as e:
+        return {"status": "error", "message": f"Error listing cabs: {str(e)}"}
     
 if __name__ == "__main__":
     mcp.run(transport="stdio")
